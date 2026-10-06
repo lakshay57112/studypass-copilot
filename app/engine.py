@@ -202,11 +202,39 @@ def draft_finding(cid, signals, risk, dfs, policy):
     return "\n".join(lines)
 
 
+_STOP = {"the", "and", "what", "when", "which", "who", "how", "can", "does", "for", "are", "with", "that", "this",
+         "from", "into", "our", "any", "should", "must", "will", "about", "there", "their", "they", "has", "have",
+         "been", "was", "were", "you", "your", "its", "not", "but", "all", "per", "than", "then", "also", "out", "fast",
+         "happens", "happen"}
+_SYN = {"agent": ["third", "party"], "agents": ["third", "party"], "consultant": ["third", "party"],
+        "limit": ["lrs", "250"], "breach": ["exceed", "above"], "split": ["structuring"], "structuring": ["threshold"],
+        "gambling": ["7995"], "crypto": ["6051"], "str": ["suspicious"], "filed": ["file", "days"],
+        "deadline": ["days"], "fee": ["invoice", "tuition"], "customers": ["customer"], "remittances": ["remittance"]}
+
+
+def _terms(text):
+    return [w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 2 and w not in _STOP]
+
+
 def search_policy(question, policy, k=4):
-    """Keyword retrieval used in demo mode. In Snowflake, the compliance-qa skill uses Cortex Search (POLICY_SEARCH)."""
-    words = {w for w in re.findall(r"[a-z0-9]+", question.lower()) if len(w) > 2}
-    synonyms = {"agent": "third", "agents": "third", "consultant": "third", "limit": "lrs", "split": "structuring",
-                "gambling": "7995", "crypto": "6051", "str": "suspicious", "deadline": "days", "fee": "invoice"}
-    words |= {synonyms[w] for w in list(words) if w in synonyms}
-    scored = policy.assign(SCORE=policy["CLAUSE_TEXT"].str.lower().map(lambda t: sum(w in t for w in words)))
-    return scored[scored["SCORE"] > 0].sort_values("SCORE", ascending=False).head(k)
+    """Keyword retrieval used in demo mode. In Snowflake, the compliance-qa skill uses Cortex Search (POLICY_SEARCH).
+
+    Whole-word matching, stopwords removed, rarer terms weighted higher (IDF), section titles count double."""
+    import math
+    q = set(_terms(question))
+    expanded = {s for w in q for s in _SYN.get(w, [])} - q
+    docs = [set(_terms(t)) for t in policy["CLAUSE_TEXT"]]
+    secs = [set(_terms(t)) for t in policy["SECTION"]]
+    n = len(docs) or 1
+    df = {w: sum(w in d or w in s for d, s in zip(docs, secs)) for w in q | expanded}
+    idf = {w: math.log((n + 1) / (c + 0.5)) for w, c in df.items()}
+
+    def score(d, s):
+        tot = 0.0
+        for w in q | expanded:
+            wt = idf[w] * (1.0 if w in q else 0.6)
+            tot += wt * ((w in d) + 2 * (w in s))
+        return round(tot, 3)
+
+    scored = policy.assign(SCORE=[score(d, s) for d, s in zip(docs, secs)])
+    return scored[scored["SCORE"] > 0].sort_values("SCORE", ascending=False, kind="stable").head(k)
