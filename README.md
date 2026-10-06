@@ -2,6 +2,8 @@
 
 **Snowflake CoCo CLI Hackathon (GCC Edition) · Challenge: Risk, Fraud and Regulatory Intelligence Copilot**
 
+**Live demo:** https://studypass-copilot.streamlit.app/ (demo mode on synthetic data, no login needed)
+
 Every year Indian banks and NBFCs send billions of dollars abroad for students' education under the RBI
 Liberalised Remittance Scheme (purpose code S0305), and they load student forex cards on top of that. Compliance teams
 still check these by hand: LRS limits, who the money actually goes to, whether the student is still enrolled,
